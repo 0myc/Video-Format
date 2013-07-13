@@ -2,5 +2,7 @@ Changes
 Makefile.PL
 MANIFEST
 README
+README.md
 t/Video-Format.t
 lib/Video/Format.pm
+lib/Video/Format/MP4.pm
