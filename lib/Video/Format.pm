@@ -1,37 +1,189 @@
 package Video::Format;
 
+our $VERSION = '0.01';
+
 use 5.010001;
 use strict;
 use warnings;
+use vars qw($VERSION $AUTOLOAD @ISA);
 
-require Exporter;
-use AutoLoader qw(AUTOLOAD);
-
-our @ISA = qw(Exporter);
-
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
-
-# This allows declaration	use Video::Format ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
-
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
-
-our @EXPORT = qw(
-	
-);
-
-our $VERSION = '0.01';
+use Carp;
+use POSIX qw(strftime mktime);
 
 
-# Preloaded methods go here.
+sub new {
+    my $class = shift;
+    my $buf = shift;
 
-# Autoload methods go after =cut, and are processed by the autosplit program.
+    croak "Undefined value" unless defined($buf);
+    croak "Not a SCALAR reference" unless ref($buf) eq 'SCALAR';
+
+    my $self = bless {}, $class;
+    $self->{buffer} = $buf;
+    $self->{buflen} = length(${$buf});
+
+    return $self;
+}
+
+
+sub _be2int16 {
+    return unpack('s>', $_[1])
+}
+
+sub _be2uint16 {
+    return unpack('S>', $_[1])
+}
+
+sub _be2uint24 {
+    my @a = unpack('C3',  $_[1]);
+    return ($a[0] << 16) + ($a[1] << 8) + $a[2];
+}
+
+sub _be2int32 {
+    return unpack('l>', $_[1])
+}
+
+sub _be2uint32 {
+    return unpack('L>', $_[1])
+}
+
+sub _be2int64 {
+    return unpack('q>', $_[1])
+}
+
+sub _be2uint64 {
+    return unpack('Q>', $_[1])
+}
+
+sub _be2double {
+    return unpack('d', pack('q', $_[0]->_be2uint64($_[1])));
+}
+
+sub get_bits {
+    my $self;
+    my $bs = shift;
+    my $bt_cnt = shift;
+    my $bt_off = shift;
+
+    return ($bs >> $bt_off) & ((2 << ($bt_cnt - 1)) - 1);
+}
+
+sub apple_date {
+    my $self = shift;
+    my $tm = shift;
+    my $ref_t = POSIX::mktime( 0, 0, 0, 1, 0, 4) + $tm;  # January 1, 1904
+
+    return POSIX::strftime("%Y-%m-%d %H:%M:%S UTC", gmtime($ref_t));
+}
+
+sub I8 {
+    my $self = shift;
+
+    my $rv = unpack('c', ${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 1) = '';
+    return $rv;
+}
+
+sub UI8 {
+    my $self = shift;
+
+    my $rv = unpack('C', ${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 1) = '';
+    return $rv;
+}
+
+sub I16 {
+    my $self = shift;
+
+    my $rv = $self->_be2int16(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 2) = '';
+    return $rv;
+}
+
+sub UI16 {
+    my $self = shift;
+
+    my $rv = $self->_be2uint16(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 2) = '';
+    return $rv;
+}
+
+sub UI24 {
+    my $self = shift;
+
+    my $rv = $self->_be2uint24(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 3) = '';
+    return $rv;
+}
+
+sub I32 {
+    my $self = shift;
+
+    my $rv = $self->_be2int32(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 4) = '';
+    return $rv;
+}
+
+sub UI32 {
+    my $self = shift;
+
+    my $rv = $self->_be2uint32(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 4) = '';
+    return $rv;
+}
+
+sub I64 {
+    my $self = shift;
+
+    my $rv = $self->_be2int64(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 8) = '';
+    return $rv;
+}
+
+sub UI64 {
+    my $self = shift;
+
+    my $rv = $self->_be2uint64(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 8) = '';
+    return $rv;
+}
+
+sub DOUBLE {
+    my $self = shift;
+
+    my $rv = $self->_be2double(${$self->{buffer}});
+    substr(${$self->{buffer}}, 0, 8) = '';
+    return $rv;
+}
+
+sub parse {
+    my $self = shift;
+    my $fmt = undef;;
+
+    if (substr($self->{buffer}, 0, 4) eq "FLV\1") {
+        $fmt = Video::Format::FLV->new($self->{buffer});
+        $self->{type} = "FLV";
+
+    } elsif (substr($self->{buffer}, 4, 4) eq "ftyp") {
+        $fmt = Video::Format::MP4->new($self->{buffer});
+        $self->{type} = "MP4";
+    }
+
+    return $fmt;
+}
+
+sub parse_recursive {
+    my $self = shift;
+    my $format = $self->parse();
+
+    return $format->parse();
+}
+
+sub type {
+    my $self = shift;
+
+    return $self->{type};
+}
 
 1;
 __END__
@@ -39,12 +191,19 @@ __END__
 
 =head1 NAME
 
-Video::Format - Perl extension for blah blah blah
+Video::Format - Parse video formats (containers) such as MP4, F4F, FLV
 
 =head1 SYNOPSIS
 
   use Video::Format;
-  blah blah blah
+  
+  open(FH, "file.mp4");
+  sysread(FH, $buf, -s "file.mp4");
+
+  $vf = Video::Format->new(\$buf);
+  $fmt = $vf->parse();
+  print $vf->type() . "\n";
+  $fmt->parse();
 
 =head1 DESCRIPTION
 
@@ -54,22 +213,41 @@ unedited.
 
 Blah blah blah.
 
-=head2 EXPORT
-
-None by default.
-
-
 
 =head1 SEE ALSO
 
-Mention other useful documentation such as the documentation of
-related modules or operating system documentation (such as man pages
-in UNIX), or any relevant external documentation such as RFCs or
-standards.
+=over 4
 
-If you have a mailing list set up for your module, mention it here.
+=item MP4::Info Project Page
 
-If you have a web site set up for your module, mention it here.
+L<http://search.cpan.org/~jhar/MP4-Info>
+
+=item ISO 14496-12:2004 - Coding of audio-visual objects - Part 12: ISO base media file format
+
+L<http://www.iso.ch/iso/en/ittf/PubliclyAvailableStandards/c038539_ISO_IEC_14496-12_2004(E).zip>
+
+=item ISO 14496-14:2003 - Coding of audio-visual objects - Part 14: MP4 file format
+
+L<http://www.iso.org/iso/en/CatalogueDetailPage.CatalogueDetail?CSNUMBER=38538>
+(Not worth buying - the interesting stuff is in Part 12).
+
+=item 3GPP TS 26.244 - 3GPP file format (3GP)
+
+L<http://www.3gpp.org/ftp/Specs/html-info/26244.htm>
+
+=item QuickTime File Format
+
+L<http://developer.apple.com/documentation/QuickTime/QTFF/>
+
+=item ISO 14496-1 Media Format
+
+L<http://www.geocities.com/xhelmboyx/quicktime/formats/mp4-layout.txt>
+
+=item Adobe Flash Video File Format Specificati on Version 10.1
+
+L<http://download.macromedia.com/f4v/video_file_format_spec_v10_1.pdf>
+
+=back
 
 =head1 AUTHOR
 
