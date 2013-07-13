@@ -10,6 +10,8 @@ use vars qw($VERSION $AUTOLOAD @ISA);
 use Carp;
 use POSIX qw(strftime mktime);
 
+use Video::Format::MP4; 
+
 
 sub new {
     my $class = shift;
@@ -18,7 +20,7 @@ sub new {
     croak "Undefined value" unless defined($buf);
     croak "Not a SCALAR reference" unless ref($buf) eq 'SCALAR';
 
-    my $self = bless {}, $class;
+    my $self = bless {}, ref($class) || $class || __PACKAGE__;
     $self->{buffer} = $buf;
     $self->{buflen} = length(${$buf});
 
@@ -156,17 +158,29 @@ sub DOUBLE {
     return $rv;
 }
 
+sub BString {
+    my $self = shift;
+    my $len = shift;
+    my $str = substr(${$self->{buffer}}, 0, $len);
+    substr(${$self->{buffer}}, 0, $len) = '';
+    return $str;
+}
+
 sub parse {
     my $self = shift;
     my $fmt = undef;;
 
-    if (substr($self->{buffer}, 0, 4) eq "FLV\1") {
+    if (substr(${$self->{buffer}}, 0, 4) eq "FLV\1") {
         $fmt = Video::Format::FLV->new($self->{buffer});
         $self->{type} = "FLV";
 
-    } elsif (substr($self->{buffer}, 4, 4) eq "ftyp") {
+    } elsif (substr(${$self->{buffer}}, 4, 4) eq "ftyp") {
         $fmt = Video::Format::MP4->new($self->{buffer});
+        $fmt->setprop("name", "FILE");
         $self->{type} = "MP4";
+
+    } else {
+        carp "Unknown file format";
     }
 
     return $fmt;
@@ -183,6 +197,29 @@ sub type {
     my $self = shift;
 
     return $self->{type};
+}
+
+sub setprop {
+    my $self = shift;
+    my $prop = shift;
+    my $val = shift;
+
+    if (exists($self->{prop})) {
+        $self->{prop}->{$prop} = $val;
+    } else {
+        $self->{prop} = {$prop => $val};
+    }
+}
+
+sub getprop {
+    my $self = shift;
+    my $prop = shift;
+
+    if (exists($self->{prop}) and exists($self->{prop}->{$prop})) {
+        return $self->{prop}->{$prop};
+    }
+
+    return undef;
 }
 
 1;
