@@ -1,0 +1,6 @@
+Revision history for Perl extension Video::Format.
+
+0.01  Sat Jul 13 12:49:37 2013
+	- original version; created by h2xs 1.23 with options
+		-X -n Video::Format -v 0.01
+
